@@ -63,9 +63,11 @@ func (h *Handler) GetNodes(c *fiber.Ctx) error {
 		})
 	}
 
-	// Add mock resource data for now
+	// Set status based on IsOnline field
 	for i := range nodes {
-		nodes[i].Status = "offline" // Will be updated by Wings daemon
+		if nodes[i].IsOnline {
+			// Status will be determined by Wings daemon, but for now set based on online status
+		}
 	}
 
 	return c.JSON(fiber.Map{
@@ -114,30 +116,23 @@ func (h *Handler) CreateNode(c *fiber.Ctx) error {
 		})
 	}
 
+	locationUUID, _ := uuid.Parse(req.LocationID)
+	
 	node := entities.Node{
-		ID:                   uuid.New().String(),
-		UUID:                 uuid.New().String(),
-		Name:                 req.Name,
-		Description:          req.Description,
-		LocationID:           req.LocationID,
-		FQDN:                 req.FQDN,
-		Hostname:             req.FQDN,
-		IP:                   "", // Will be resolved later
-		Scheme:               req.Scheme,
-		BehindProxy:          req.BehindProxy,
-		MaintenanceMode:      false,
-		Memory:               req.Memory,
-		MemoryOverallocate:   req.MemoryOverallocate,
-		Disk:                 req.Disk,
-		DiskOverallocate:     req.DiskOverallocate,
-		UploadSize:           req.UploadSize,
-		DaemonListenPort:     req.DaemonListenPort,
-		DaemonSftpPort:       req.DaemonSftpPort,
-		DaemonToken:          token,
-		PublicKey:            true,
-		Status:               "offline",
-		CreatedAt:            time.Now(),
-		UpdatedAt:            time.Now(),
+		Name:             req.Name,
+		Description:      req.Description,
+		LocationID:       locationUUID,
+		FQDN:             req.FQDN,
+		Scheme:           req.Scheme,
+		DaemonPort:       req.DaemonListenPort,
+		DaemonToken:      token,
+		MemoryTotal:      int64(req.Memory),
+		MemoryOveralloc:  req.MemoryOverallocate,
+		DiskTotal:        int64(req.Disk),
+		DiskOveralloc:    req.DiskOverallocate,
+		CPUTotal:         100, // Default 1 core
+		IsOnline:         false,
+		MaintenanceMode:  req.BehindProxy, // Use BehindProxy as maintenance mode for now
 	}
 
 	if err := h.db.Create(&node).Error; err != nil {
@@ -213,22 +208,19 @@ func (h *Handler) UpdateNode(c *fiber.Ctx) error {
 	}
 
 	// Update node fields
+	locationUUID, _ := uuid.Parse(req.LocationID)
+	
 	node.Name = req.Name
 	node.Description = req.Description
-	node.LocationID = req.LocationID
+	node.LocationID = locationUUID
 	node.FQDN = req.FQDN
-	node.Hostname = req.FQDN
 	node.Scheme = req.Scheme
-	node.BehindProxy = req.BehindProxy
 	node.MaintenanceMode = req.MaintenanceMode
-	node.Memory = req.Memory
-	node.MemoryOverallocate = req.MemoryOverallocate
-	node.Disk = req.Disk
-	node.DiskOverallocate = req.DiskOverallocate
-	node.UploadSize = req.UploadSize
-	node.DaemonListenPort = req.DaemonListenPort
-	node.DaemonSftpPort = req.DaemonSftpPort
-	node.UpdatedAt = time.Now()
+	node.MemoryTotal = int64(req.Memory)
+	node.MemoryOveralloc = req.MemoryOverallocate
+	node.DiskTotal = int64(req.Disk)
+	node.DiskOveralloc = req.DiskOverallocate
+	node.DaemonPort = req.DaemonListenPort
 
 	if err := h.db.Save(&node).Error; err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
@@ -291,12 +283,12 @@ func (h *Handler) GetNodeConfiguration(c *fiber.Ctx) error {
 
 	config := fiber.Map{
 		"debug": false,
-		"uuid":  node.UUID,
+		"uuid":  node.ID.String(),
 		"token_id": node.DaemonToken[:16],
 		"token": node.DaemonToken,
 		"api": fiber.Map{
 			"host": node.FQDN,
-			"port": node.DaemonListenPort,
+			"port": node.DaemonPort,
 			"ssl": fiber.Map{
 				"enabled": node.Scheme == "https",
 				"cert":    "/etc/letsencrypt/live/" + node.FQDN + "/fullchain.pem",
@@ -306,7 +298,7 @@ func (h *Handler) GetNodeConfiguration(c *fiber.Ctx) error {
 		"system": fiber.Map{
 			"data": "/var/lib/pterodactyl/volumes",
 			"sftp": fiber.Map{
-				"bind_port": node.DaemonSftpPort,
+				"bind_port": 2022, // Default SFTP port
 			},
 		},
 		"allowed_mounts": []string{},
