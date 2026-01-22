@@ -1,6 +1,9 @@
 package http
 
 import (
+	"context"
+	"time"
+
 	"github.com/aetherpanel/aether-panel/internal/infrastructure/config"
 	"github.com/aetherpanel/aether-panel/internal/infrastructure/redis"
 	"github.com/aetherpanel/aether-panel/internal/interfaces/http/handlers"
@@ -15,7 +18,6 @@ import (
 	"github.com/gofiber/websocket/v2"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
-	"time"
 )
 
 // NewServer creates and configures a new Fiber server
@@ -202,7 +204,7 @@ func handleConsoleWebSocket(c *websocket.Conn, cfg *config.Config, rdb *redis.Cl
 	serverID := c.Params("serverId")
 	
 	// Subscribe to console channel
-	ctx := c.Context()
+	ctx := context.Background()
 	pubsub := rdb.Subscribe(ctx, "console:"+serverID)
 	defer pubsub.Close()
 
@@ -234,10 +236,10 @@ func handleStatsWebSocket(c *websocket.Conn, cfg *config.Config, rdb *redis.Clie
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
+	ctx := context.Background()
 	for range ticker.C {
 		// Get stats from Redis cache
-		ctx := c.Context()
-		stats, err := rdb.Get(ctx, "stats:"+serverID)
+		stats, err := rdb.Get(ctx, "stats:"+serverID).Result()
 		if err != nil {
 			continue
 		}
