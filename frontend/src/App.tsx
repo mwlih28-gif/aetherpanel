@@ -16,6 +16,7 @@ import DashboardPage from './pages/dashboard/DashboardPage'
 import ServersPage from './pages/servers/ServersPage'
 import ServerDetailPage from './pages/servers/ServerDetailPage'
 import NodesPage from './pages/admin/NodesPage'
+import LocationsPage from './pages/admin/LocationsPage'
 import UsersPage from './pages/admin/UsersPage'
 import SettingsPage from './pages/settings/SettingsPage'
 
@@ -52,6 +53,7 @@ function App() {
           <Route path="/servers" element={<ServersPage />} />
           <Route path="/servers/:id" element={<ServerDetailPage />} />
           <Route path="/admin/nodes" element={<NodesPage />} />
+          <Route path="/admin/locations" element={<LocationsPage />} />
           <Route path="/admin/users" element={<UsersPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>

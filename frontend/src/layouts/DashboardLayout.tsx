@@ -13,6 +13,7 @@ import {
   Bell,
   Moon,
   Sun,
+  MapPin,
 } from 'lucide-react'
 import { cn } from '../lib/utils'
 
@@ -20,6 +21,7 @@ const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Servers', href: '/servers', icon: Server },
   { name: 'Nodes', href: '/admin/nodes', icon: HardDrive, admin: true },
+  { name: 'Locations', href: '/admin/locations', icon: MapPin, admin: true },
   { name: 'Users', href: '/admin/users', icon: Users, admin: true },
   { name: 'Settings', href: '/settings', icon: Settings },
 ]

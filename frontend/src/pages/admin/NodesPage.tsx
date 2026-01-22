@@ -1,12 +1,32 @@
 import React, { useState, useEffect } from 'react'
-import { HardDrive, Plus, MapPin, Cpu, MemoryStick, Wifi, Settings, Trash2 } from 'lucide-react'
+import { HardDrive, Plus, MapPin, Cpu, MemoryStick, Wifi, Settings, Trash2, Key, Copy, Eye, EyeOff, Terminal, Globe } from 'lucide-react'
+
+interface Location {
+  id: string
+  short: string
+  long: string
+}
 
 interface Node {
   id: string
+  uuid: string
   name: string
-  hostname: string
-  ip: string
-  location: string
+  description: string
+  locationId: string
+  location?: Location
+  fqdn: string
+  scheme: 'http' | 'https'
+  behindProxy: boolean
+  maintenanceMode: boolean
+  memory: number
+  memoryOverallocate: number
+  disk: number
+  diskOverallocate: number
+  uploadSize: number
+  daemonListenPort: number
+  daemonSftpPort: number
+  daemonToken: string
+  publicKey: boolean
   status: 'online' | 'offline' | 'maintenance'
   resources: {
     cpu: { used: number; total: number }
@@ -15,6 +35,8 @@ interface Node {
   }
   servers: number
   lastSeen: string
+  createdAt: string
+  updatedAt: string
 }
 
 export default function NodesPage() {
@@ -207,123 +229,426 @@ export default function NodesPage() {
 }
 
 function AddNodeModal({ onClose, onAdd }: { onClose: () => void; onAdd: () => void }) {
+  const [currentStep, setCurrentStep] = useState(1)
+  const [locations, setLocations] = useState<Location[]>([])
   const [formData, setFormData] = useState({
     name: '',
-    hostname: '',
-    ip: '',
-    location: '',
-    sshPort: '22',
-    sshUser: 'root',
-    sshKey: ''
+    description: '',
+    locationId: '',
+    fqdn: '',
+    scheme: 'https' as 'http' | 'https',
+    behindProxy: false,
+    publicKey: true,
+    memory: 1024,
+    memoryOverallocate: 0,
+    disk: 10240,
+    diskOverallocate: 0,
+    uploadSize: 100,
+    daemonListenPort: 8080,
+    daemonSftpPort: 2022
   })
+  const [generatedToken, setGeneratedToken] = useState('')
+  const [showToken, setShowToken] = useState(false)
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    fetchLocations()
+  }, [])
+
+  const fetchLocations = async () => {
+    try {
+      // TODO: Replace with actual API call
+      setLocations([])
+    } catch (error) {
+      console.error('Failed to fetch locations:', error)
+    }
+  }
+
+  const generateToken = () => {
+    const token = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+    setGeneratedToken(token)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     
     try {
+      if (!generatedToken) {
+        generateToken()
+      }
+      
       // TODO: Replace with actual API call
-      console.log('Adding node:', formData)
+      console.log('Creating node:', { ...formData, daemonToken: generatedToken })
       
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 1000))
       
-      onAdd()
-      onClose()
+      setCurrentStep(3) // Show installation instructions
     } catch (error) {
-      console.error('Failed to add node:', error)
+      console.error('Failed to create node:', error)
     } finally {
       setLoading(false)
     }
   }
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+  }
+
+  const getInstallationScript = () => {
+    return `#!/bin/bash
+# Aether Panel Wings Installation Script
+
+set -e
+
+# Download and install Wings
+curl -L -o /usr/local/bin/wings "https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_amd64"
+chmod u+x /usr/local/bin/wings
+
+# Create wings user
+useradd -r -d /etc/pterodactyl -s /usr/sbin/nologin pterodactyl
+
+# Create directories
+mkdir -p /etc/pterodactyl /var/log/pterodactyl /var/lib/pterodactyl/{volumes,backups}
+chown -R pterodactyl:pterodactyl /etc/pterodactyl /var/log/pterodactyl /var/lib/pterodactyl
+
+# Create configuration file
+cat > /etc/pterodactyl/config.yml << EOF
+debug: false
+uuid: ${crypto.randomUUID()}
+token_id: ${generatedToken.substring(0, 16)}
+token: ${generatedToken}
+api:
+  host: ${formData.fqdn}
+  port: ${formData.daemonListenPort}
+  ssl:
+    enabled: ${formData.scheme === 'https'}
+    cert: /etc/letsencrypt/live/${formData.fqdn}/fullchain.pem
+    key: /etc/letsencrypt/live/${formData.fqdn}/privkey.pem
+system:
+  data: /var/lib/pterodactyl/volumes
+  sftp:
+    bind_port: ${formData.daemonSftpPort}
+allowed_mounts: []
+remote: http${formData.scheme === 'https' ? 's' : ''}://${window.location.host}
+EOF
+
+chown pterodactyl:pterodactyl /etc/pterodactyl/config.yml
+
+# Create systemd service
+cat > /etc/systemd/system/wings.service << EOF
+[Unit]
+Description=Pterodactyl Wings Daemon
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+User=pterodactyl
+WorkingDirectory=/etc/pterodactyl
+LimitNOFILE=4096
+PIDFile=/var/run/wings/daemon.pid
+ExecStart=/usr/local/bin/wings
+Restart=on-failure
+StartLimitInterval=180
+StartLimitBurst=30
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable and start Wings
+systemctl enable --now wings
+
+echo "Wings installation completed successfully!"
+echo "Node should now appear as online in the panel."
+`
+  }
+
+  if (currentStep === 3) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-card border rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+          <h2 className="text-xl font-semibold mb-4">Wings Installation</h2>
+          
+          <div className="space-y-6">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h3 className="font-semibold text-blue-900 mb-2">Installation Instructions</h3>
+              <p className="text-blue-800 text-sm">
+                Run the following script on your server to install and configure Wings daemon.
+                Make sure Docker is installed before running this script.
+              </p>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="font-medium">Installation Script</h4>
+                <button
+                  onClick={() => copyToClipboard(getInstallationScript())}
+                  className="flex items-center gap-2 px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
+                >
+                  <Copy className="h-4 w-4" />
+                  Copy Script
+                </button>
+              </div>
+              <pre className="bg-gray-900 text-green-400 p-4 rounded-lg text-sm overflow-x-auto">
+                {getInstallationScript()}
+              </pre>
+            </div>
+
+            <div>
+              <h4 className="font-medium mb-2">Node Token</h4>
+              <div className="flex items-center gap-2">
+                <input
+                  type={showToken ? 'text' : 'password'}
+                  value={generatedToken}
+                  readOnly
+                  className="flex-1 px-3 py-2 border rounded-lg font-mono text-sm"
+                />
+                <button
+                  onClick={() => setShowToken(!showToken)}
+                  className="p-2 border rounded-lg hover:bg-muted"
+                >
+                  {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+                <button
+                  onClick={() => copyToClipboard(generatedToken)}
+                  className="p-2 border rounded-lg hover:bg-muted"
+                >
+                  <Copy className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                This token is used to authenticate the Wings daemon with the panel.
+              </p>
+            </div>
+
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <h4 className="font-semibold text-yellow-900 mb-2">Important Notes</h4>
+              <ul className="text-yellow-800 text-sm space-y-1">
+                <li>• Ensure Docker is installed and running on the target server</li>
+                <li>• Make sure ports {formData.daemonListenPort} and {formData.daemonSftpPort} are open</li>
+                <li>• The server should be able to reach this panel at {window.location.host}</li>
+                <li>• SSL certificates are required if using HTTPS scheme</li>
+              </ul>
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <button
+                onClick={() => {
+                  onAdd()
+                  onClose()
+                }}
+                className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg"
+              >
+                Complete Setup
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-card border rounded-lg p-6 w-full max-w-md">
-        <h2 className="text-xl font-semibold mb-4">Add New Node</h2>
+      <div className="bg-card border rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <h2 className="text-xl font-semibold mb-4">Create New Node</h2>
         
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Node Name</label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg"
-              placeholder="e.g., US-East-1"
-              required
-            />
+        {/* Step Indicator */}
+        <div className="flex items-center mb-6">
+          <div className={`flex items-center justify-center w-8 h-8 rounded-full ${currentStep >= 1 ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>
+            1
           </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Hostname/Domain</label>
-            <input
-              type="text"
-              value={formData.hostname}
-              onChange={(e) => setFormData({ ...formData, hostname: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg"
-              placeholder="e.g., node1.example.com"
-              required
-            />
+          <div className={`flex-1 h-1 mx-2 ${currentStep >= 2 ? 'bg-blue-500' : 'bg-gray-200'}`}></div>
+          <div className={`flex items-center justify-center w-8 h-8 rounded-full ${currentStep >= 2 ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>
+            2
           </div>
+        </div>
 
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Basic Details */}
           <div>
-            <label className="block text-sm font-medium mb-1">IP Address</label>
-            <input
-              type="text"
-              value={formData.ip}
-              onChange={(e) => setFormData({ ...formData, ip: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg"
-              placeholder="e.g., 192.168.1.100"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Location</label>
-            <input
-              type="text"
-              value={formData.location}
-              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg"
-              placeholder="e.g., New York, USA"
-              required
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">SSH Port</label>
-              <input
-                type="number"
-                value={formData.sshPort}
-                onChange={(e) => setFormData({ ...formData, sshPort: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg"
-                placeholder="22"
-              />
+            <h3 className="font-semibold mb-4">Basic Details</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Name</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="Node Name"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Location</label>
+                <select
+                  value={formData.locationId}
+                  onChange={(e) => setFormData({ ...formData, locationId: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                >
+                  <option value="">Select a Location</option>
+                  {locations.map(location => (
+                    <option key={location.id} value={location.id}>
+                      {location.short} - {location.long}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">SSH User</label>
-              <input
-                type="text"
-                value={formData.sshUser}
-                onChange={(e) => setFormData({ ...formData, sshUser: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg"
-                placeholder="root"
+            <div className="mt-4">
+              <label className="block text-sm font-medium mb-1">Description</label>
+              <textarea
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg h-20"
+                placeholder="A brief description of this server node"
               />
             </div>
           </div>
 
+          {/* Configuration */}
           <div>
-            <label className="block text-sm font-medium mb-1">SSH Private Key</label>
-            <textarea
-              value={formData.sshKey}
-              onChange={(e) => setFormData({ ...formData, sshKey: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg h-24"
-              placeholder="-----BEGIN PRIVATE KEY-----"
-              required
-            />
+            <h3 className="font-semibold mb-4">Configuration</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">FQDN</label>
+                <input
+                  type="text"
+                  value={formData.fqdn}
+                  onChange={(e) => setFormData({ ...formData, fqdn: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="node.example.com"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Communicate Over SSL</label>
+                <div className="flex gap-4 mt-2">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="scheme"
+                      value="https"
+                      checked={formData.scheme === 'https'}
+                      onChange={(e) => setFormData({ ...formData, scheme: e.target.value as 'https' })}
+                      className="mr-2"
+                    />
+                    Use SSL Connection
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="scheme"
+                      value="http"
+                      checked={formData.scheme === 'http'}
+                      onChange={(e) => setFormData({ ...formData, scheme: e.target.value as 'http' })}
+                      className="mr-2"
+                    />
+                    Use HTTP Connection
+                  </label>
+                </div>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Daemon Port</label>
+                <input
+                  type="number"
+                  value={formData.daemonListenPort}
+                  onChange={(e) => setFormData({ ...formData, daemonListenPort: parseInt(e.target.value) })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  min="1024"
+                  max="65535"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Daemon SFTP Port</label>
+                <input
+                  type="number"
+                  value={formData.daemonSftpPort}
+                  onChange={(e) => setFormData({ ...formData, daemonSftpPort: parseInt(e.target.value) })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  min="1024"
+                  max="65535"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={formData.behindProxy}
+                  onChange={(e) => setFormData({ ...formData, behindProxy: e.target.checked })}
+                  className="mr-2"
+                />
+                Behind Proxy
+              </label>
+              <p className="text-xs text-muted-foreground mt-1">
+                If you are running the daemon behind a proxy such as Cloudflare, select this to have the daemon skip looking for certificates on boot.
+              </p>
+            </div>
+          </div>
+
+          {/* Resource Limits */}
+          <div>
+            <h3 className="font-semibold mb-4">Resource Management</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Total Memory (MB)</label>
+                <input
+                  type="number"
+                  value={formData.memory}
+                  onChange={(e) => setFormData({ ...formData, memory: parseInt(e.target.value) })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  min="128"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Memory Over-Allocation (%)</label>
+                <input
+                  type="number"
+                  value={formData.memoryOverallocate}
+                  onChange={(e) => setFormData({ ...formData, memoryOverallocate: parseInt(e.target.value) })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  min="0"
+                  max="500"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Disk Space (MB)</label>
+                <input
+                  type="number"
+                  value={formData.disk}
+                  onChange={(e) => setFormData({ ...formData, disk: parseInt(e.target.value) })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  min="1024"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Disk Over-Allocation (%)</label>
+                <input
+                  type="number"
+                  value={formData.diskOverallocate}
+                  onChange={(e) => setFormData({ ...formData, diskOverallocate: parseInt(e.target.value) })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  min="0"
+                  max="500"
+                />
+              </div>
+            </div>
           </div>
 
           <div className="flex gap-3 pt-4">
@@ -339,7 +664,7 @@ function AddNodeModal({ onClose, onAdd }: { onClose: () => void; onAdd: () => vo
               disabled={loading}
               className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50"
             >
-              {loading ? 'Adding...' : 'Add Node'}
+              {loading ? 'Creating...' : 'Create Node'}
             </button>
           </div>
         </form>
