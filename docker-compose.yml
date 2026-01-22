@@ -68,6 +68,7 @@ services:
     networks:
       - aether_network
     volumes:
+      - ./config.example.yaml:/app/config.yaml:ro
       - ./data/backups:/var/lib/aether/backups
       - ./data/logs:/var/log/aether
 
