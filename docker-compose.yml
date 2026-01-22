@@ -10,15 +10,18 @@ services:
       POSTGRES_USER: ${DB_USER:-aether}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-aether_secret}
       POSTGRES_DB: ${DB_NAME:-aether_panel}
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks:
-      - aether_network
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-aether}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-aether} -d ${DB_NAME:-aether_panel}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - aether_network
 
   # Redis Cache
   redis:

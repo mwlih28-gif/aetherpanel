@@ -9,6 +9,9 @@ RUN apk add --no-cache git ca-certificates tzdata
 # Copy source code
 COPY . .
 
+# Copy config file
+COPY ../config.example.yaml /app/config.yaml
+
 # Download dependencies and build
 RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/aether-api ./cmd/api
 
@@ -20,8 +23,9 @@ WORKDIR /app
 # Install runtime dependencies
 RUN apk add --no-cache ca-certificates tzdata
 
-# Copy binary from builder
+# Copy binary and config from builder
 COPY --from=builder /app/aether-api /app/aether-api
+COPY --from=builder /app/config.yaml /app/config.yaml
 
 # Create non-root user
 RUN adduser -D -g '' aether
