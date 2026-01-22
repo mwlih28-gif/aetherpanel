@@ -4,17 +4,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/aetherpanel/aether-panel/internal/domain/entities"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 )
-
-type Location struct {
-	ID        string    `json:"id" gorm:"primaryKey"`
-	Short     string    `json:"short" gorm:"unique;not null"`
-	Long      string    `json:"long" gorm:"not null"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
 
 type CreateLocationRequest struct {
 	Short string `json:"short" validate:"required,min=1,max=60"`
@@ -28,7 +21,7 @@ type UpdateLocationRequest struct {
 
 // GetLocations returns all locations
 func (h *Handler) GetLocations(c *fiber.Ctx) error {
-	var locations []Location
+	var locations []entities.Location
 	
 	if err := h.db.Find(&locations).Error; err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
@@ -59,14 +52,14 @@ func (h *Handler) CreateLocation(c *fiber.Ctx) error {
 	}
 
 	// Check if short code already exists
-	var existingLocation Location
+	var existingLocation entities.Location
 	if err := h.db.Where("short = ?", req.Short).First(&existingLocation).Error; err == nil {
 		return c.Status(http.StatusConflict).JSON(fiber.Map{
 			"error": "Location with this short code already exists",
 		})
 	}
 
-	location := Location{
+	location := entities.Location{
 		ID:        uuid.New().String(),
 		Short:     req.Short,
 		Long:      req.Long,
@@ -89,7 +82,7 @@ func (h *Handler) CreateLocation(c *fiber.Ctx) error {
 func (h *Handler) GetLocation(c *fiber.Ctx) error {
 	id := c.Params("id")
 	
-	var location Location
+	var location entities.Location
 	if err := h.db.Where("id = ?", id).First(&location).Error; err != nil {
 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
 			"error": "Location not found",
@@ -120,7 +113,7 @@ func (h *Handler) UpdateLocation(c *fiber.Ctx) error {
 		})
 	}
 
-	var location Location
+	var location entities.Location
 	if err := h.db.Where("id = ?", id).First(&location).Error; err != nil {
 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
 			"error": "Location not found",
@@ -128,7 +121,7 @@ func (h *Handler) UpdateLocation(c *fiber.Ctx) error {
 	}
 
 	// Check if short code already exists (excluding current location)
-	var existingLocation Location
+	var existingLocation entities.Location
 	if err := h.db.Where("short = ? AND id != ?", req.Short, id).First(&existingLocation).Error; err == nil {
 		return c.Status(http.StatusConflict).JSON(fiber.Map{
 			"error": "Location with this short code already exists",
@@ -154,7 +147,7 @@ func (h *Handler) UpdateLocation(c *fiber.Ctx) error {
 func (h *Handler) DeleteLocation(c *fiber.Ctx) error {
 	id := c.Params("id")
 	
-	var location Location
+	var location entities.Location
 	if err := h.db.Where("id = ?", id).First(&location).Error; err != nil {
 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
 			"error": "Location not found",
@@ -163,7 +156,7 @@ func (h *Handler) DeleteLocation(c *fiber.Ctx) error {
 
 	// Check if location has nodes
 	var nodeCount int64
-	if err := h.db.Model(&Node{}).Where("location_id = ?", id).Count(&nodeCount).Error; err != nil {
+	if err := h.db.Model(&entities.Node{}).Where("location_id = ?", id).Count(&nodeCount).Error; err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to check location usage",
 		})

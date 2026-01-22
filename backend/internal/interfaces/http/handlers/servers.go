@@ -4,31 +4,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/aetherpanel/aether-panel/internal/domain/entities"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 )
-
-type GameServer struct {
-	ID          string    `json:"id" gorm:"primaryKey"`
-	UUID        string    `json:"uuid" gorm:"unique;not null"`
-	Name        string    `json:"name" gorm:"not null"`
-	Description string    `json:"description"`
-	NodeID      string    `json:"node_id" gorm:"not null"`
-	Node        *Node     `json:"node,omitempty" gorm:"foreignKey:NodeID"`
-	Game        string    `json:"game" gorm:"not null"`
-	GameVersion string    `json:"game_version" gorm:"not null"`
-	Status      string    `json:"status" gorm:"default:stopped"`
-	Memory      int       `json:"memory" gorm:"not null"`
-	Disk        int       `json:"disk" gorm:"not null"`
-	CPU         int       `json:"cpu" gorm:"not null"`
-	Port        int       `json:"port"`
-	IP          string    `json:"ip"`
-	StartupCmd  string    `json:"startup_cmd"`
-	DockerImage string    `json:"docker_image"`
-	Environment string    `json:"environment" gorm:"type:text"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-}
 
 type CreateServerRequest struct {
 	Name        string `json:"name" validate:"required,min=1,max=100"`
@@ -51,7 +30,7 @@ type UpdateServerRequest struct {
 
 // GetServers returns all servers
 func (h *Handler) GetServers(c *fiber.Ctx) error {
-	var servers []GameServer
+	var servers []entities.Server
 	
 	if err := h.db.Preload("Node").Preload("Node.Location").Find(&servers).Error; err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
@@ -82,7 +61,7 @@ func (h *Handler) CreateServer(c *fiber.Ctx) error {
 	}
 
 	// Check if node exists
-	var node Node
+	var node entities.Node
 	if err := h.db.Where("id = ?", req.NodeID).First(&node).Error; err != nil {
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
 			"error": "Node not found",
@@ -91,7 +70,7 @@ func (h *Handler) CreateServer(c *fiber.Ctx) error {
 
 	// Check node resources
 	var totalMemory, totalDisk int
-	h.db.Model(&GameServer{}).Where("node_id = ?", req.NodeID).Select("COALESCE(SUM(memory), 0), COALESCE(SUM(disk), 0)").Row().Scan(&totalMemory, &totalDisk)
+	h.db.Model(&entities.Server{}).Where("node_id = ?", req.NodeID).Select("COALESCE(SUM(memory), 0), COALESCE(SUM(disk), 0)").Row().Scan(&totalMemory, &totalDisk)
 
 	if totalMemory+req.Memory > node.Memory {
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
@@ -108,7 +87,7 @@ func (h *Handler) CreateServer(c *fiber.Ctx) error {
 	// Get Docker image and startup command based on game
 	dockerImage, startupCmd := getGameConfig(req.Game, req.GameVersion)
 
-	server := GameServer{
+	server := entities.Server{
 		ID:          uuid.New().String(),
 		UUID:        uuid.New().String(),
 		Name:        req.Name,
@@ -144,7 +123,7 @@ func (h *Handler) CreateServer(c *fiber.Ctx) error {
 func (h *Handler) GetServer(c *fiber.Ctx) error {
 	id := c.Params("id")
 	
-	var server GameServer
+	var server entities.Server
 	if err := h.db.Preload("Node").Preload("Node.Location").Where("id = ?", id).First(&server).Error; err != nil {
 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
 			"error": "Server not found",
@@ -175,7 +154,7 @@ func (h *Handler) UpdateServer(c *fiber.Ctx) error {
 		})
 	}
 
-	var server GameServer
+	var server entities.Server
 	if err := h.db.Where("id = ?", id).First(&server).Error; err != nil {
 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
 			"error": "Server not found",
@@ -208,7 +187,7 @@ func (h *Handler) UpdateServer(c *fiber.Ctx) error {
 func (h *Handler) DeleteServer(c *fiber.Ctx) error {
 	id := c.Params("id")
 	
-	var server GameServer
+	var server entities.Server
 	if err := h.db.Where("id = ?", id).First(&server).Error; err != nil {
 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
 			"error": "Server not found",
@@ -234,7 +213,7 @@ func (h *Handler) DeleteServer(c *fiber.Ctx) error {
 func (h *Handler) StartServer(c *fiber.Ctx) error {
 	id := c.Params("id")
 	
-	var server GameServer
+	var server entities.Server
 	if err := h.db.Where("id = ?", id).First(&server).Error; err != nil {
 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
 			"error": "Server not found",
@@ -262,7 +241,7 @@ func (h *Handler) StartServer(c *fiber.Ctx) error {
 func (h *Handler) StopServer(c *fiber.Ctx) error {
 	id := c.Params("id")
 	
-	var server GameServer
+	var server entities.Server
 	if err := h.db.Where("id = ?", id).First(&server).Error; err != nil {
 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
 			"error": "Server not found",
@@ -290,7 +269,7 @@ func (h *Handler) StopServer(c *fiber.Ctx) error {
 func (h *Handler) RestartServer(c *fiber.Ctx) error {
 	id := c.Params("id")
 	
-	var server GameServer
+	var server entities.Server
 	if err := h.db.Where("id = ?", id).First(&server).Error; err != nil {
 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
 			"error": "Server not found",
@@ -320,7 +299,7 @@ func getGameConfig(game, version string) (string, string) {
 	case "gmod":
 		return "ghcr.io/pterodactyl/games:source", "./srcds_run -game garrysmod -console -usercon +gamemode {{GAMEMODE}} +map {{MAP}} -tickrate {{TICKRATE}} -port {{SERVER_PORT}} +hostname \"{{HOSTNAME}}\" +rcon_password \"{{RCON_PASSWORD}}\" +sv_password \"{{SERVER_PASSWORD}}\""
 	case "ark":
-		return "ghcr.io/pterodactyl/games:ark", "./ShooterGameServer {{MAP}}?listen?SessionName=\"{{SESSION_NAME}}\"?ServerPassword={{SERVER_PASSWORD}}?ServerAdminPassword={{ADMIN_PASSWORD}}?Port={{SERVER_PORT}}?QueryPort={{QUERY_PORT}}?MaxPlayers={{MAX_PLAYERS}}"
+		return "ghcr.io/pterodactyl/games:ark", "./Shooterentities.Server {{MAP}}?listen?SessionName=\"{{SESSION_NAME}}\"?ServerPassword={{SERVER_PASSWORD}}?ServerAdminPassword={{ADMIN_PASSWORD}}?Port={{SERVER_PORT}}?QueryPort={{QUERY_PORT}}?MaxPlayers={{MAX_PLAYERS}}"
 	case "valheim":
 		return "ghcr.io/pterodactyl/games:valheim", "./valheim_server.x86_64 -name \"{{SERVER_NAME}}\" -port {{SERVER_PORT}} -world \"{{WORLD_NAME}}\" -password \"{{PASSWORD}}\" -public {{PUBLIC_SERVER}}"
 	default:

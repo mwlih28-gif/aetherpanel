@@ -6,37 +6,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/aetherpanel/aether-panel/internal/domain/entities"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 )
-
-type Node struct {
-	ID                   string    `json:"id" gorm:"primaryKey"`
-	UUID                 string    `json:"uuid" gorm:"unique;not null"`
-	Name                 string    `json:"name" gorm:"not null"`
-	Description          string    `json:"description"`
-	LocationID           string    `json:"location_id" gorm:"not null"`
-	Location             *Location `json:"location,omitempty" gorm:"foreignKey:LocationID"`
-	FQDN                 string    `json:"fqdn" gorm:"not null"`
-	Hostname             string    `json:"hostname" gorm:"not null"`
-	IP                   string    `json:"ip" gorm:"not null"`
-	Scheme               string    `json:"scheme" gorm:"default:https"`
-	BehindProxy          bool      `json:"behind_proxy" gorm:"default:false"`
-	MaintenanceMode      bool      `json:"maintenance_mode" gorm:"default:false"`
-	Memory               int       `json:"memory" gorm:"not null"`
-	MemoryOverallocate   int       `json:"memory_overallocate" gorm:"default:0"`
-	Disk                 int       `json:"disk" gorm:"not null"`
-	DiskOverallocate     int       `json:"disk_overallocate" gorm:"default:0"`
-	UploadSize           int       `json:"upload_size" gorm:"default:100"`
-	DaemonListenPort     int       `json:"daemon_listen_port" gorm:"default:8080"`
-	DaemonSftpPort       int       `json:"daemon_sftp_port" gorm:"default:2022"`
-	DaemonToken          string    `json:"daemon_token" gorm:"not null"`
-	PublicKey            bool      `json:"public_key" gorm:"default:true"`
-	Status               string    `json:"status" gorm:"default:offline"`
-	LastSeen             *time.Time `json:"last_seen"`
-	CreatedAt            time.Time `json:"created_at"`
-	UpdatedAt            time.Time `json:"updated_at"`
-}
 
 type CreateNodeRequest struct {
 	Name                 string `json:"name" validate:"required,min=1,max=100"`
@@ -82,7 +55,7 @@ func generateToken() (string, error) {
 
 // GetNodes returns all nodes
 func (h *Handler) GetNodes(c *fiber.Ctx) error {
-	var nodes []Node
+	var nodes []entities.Node
 	
 	if err := h.db.Preload("Location").Find(&nodes).Error; err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
@@ -118,7 +91,7 @@ func (h *Handler) CreateNode(c *fiber.Ctx) error {
 	}
 
 	// Check if location exists
-	var location Location
+	var location entities.Location
 	if err := h.db.Where("id = ?", req.LocationID).First(&location).Error; err != nil {
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
 			"error": "Location not found",
@@ -126,7 +99,7 @@ func (h *Handler) CreateNode(c *fiber.Ctx) error {
 	}
 
 	// Check if FQDN already exists
-	var existingNode Node
+	var existingNode entities.Node
 	if err := h.db.Where("fqdn = ?", req.FQDN).First(&existingNode).Error; err == nil {
 		return c.Status(http.StatusConflict).JSON(fiber.Map{
 			"error": "Node with this FQDN already exists",
@@ -141,7 +114,7 @@ func (h *Handler) CreateNode(c *fiber.Ctx) error {
 		})
 	}
 
-	node := Node{
+	node := entities.Node{
 		ID:                   uuid.New().String(),
 		UUID:                 uuid.New().String(),
 		Name:                 req.Name,
@@ -185,7 +158,7 @@ func (h *Handler) CreateNode(c *fiber.Ctx) error {
 func (h *Handler) GetNode(c *fiber.Ctx) error {
 	id := c.Params("id")
 	
-	var node Node
+	var node entities.Node
 	if err := h.db.Preload("Location").Where("id = ?", id).First(&node).Error; err != nil {
 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
 			"error": "Node not found",
@@ -216,7 +189,7 @@ func (h *Handler) UpdateNode(c *fiber.Ctx) error {
 		})
 	}
 
-	var node Node
+	var node entities.Node
 	if err := h.db.Where("id = ?", id).First(&node).Error; err != nil {
 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
 			"error": "Node not found",
@@ -224,7 +197,7 @@ func (h *Handler) UpdateNode(c *fiber.Ctx) error {
 	}
 
 	// Check if location exists
-	var location Location
+	var location entities.Location
 	if err := h.db.Where("id = ?", req.LocationID).First(&location).Error; err != nil {
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
 			"error": "Location not found",
@@ -232,7 +205,7 @@ func (h *Handler) UpdateNode(c *fiber.Ctx) error {
 	}
 
 	// Check if FQDN already exists (excluding current node)
-	var existingNode Node
+	var existingNode entities.Node
 	if err := h.db.Where("fqdn = ? AND id != ?", req.FQDN, id).First(&existingNode).Error; err == nil {
 		return c.Status(http.StatusConflict).JSON(fiber.Map{
 			"error": "Node with this FQDN already exists",
@@ -275,7 +248,7 @@ func (h *Handler) UpdateNode(c *fiber.Ctx) error {
 func (h *Handler) DeleteNode(c *fiber.Ctx) error {
 	id := c.Params("id")
 	
-	var node Node
+	var node entities.Node
 	if err := h.db.Where("id = ?", id).First(&node).Error; err != nil {
 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
 			"error": "Node not found",
@@ -284,7 +257,7 @@ func (h *Handler) DeleteNode(c *fiber.Ctx) error {
 
 	// Check if node has servers
 	var serverCount int64
-	if err := h.db.Model(&GameServer{}).Where("node_id = ?", id).Count(&serverCount).Error; err != nil {
+	if err := h.db.Model(&entities.Server{}).Where("node_id = ?", id).Count(&serverCount).Error; err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to check node usage",
 		})
@@ -309,7 +282,7 @@ func (h *Handler) DeleteNode(c *fiber.Ctx) error {
 func (h *Handler) GetNodeConfiguration(c *fiber.Ctx) error {
 	id := c.Params("id")
 	
-	var node Node
+	var node entities.Node
 	if err := h.db.Where("id = ?", id).First(&node).Error; err != nil {
 		return c.Status(http.StatusNotFound).JSON(fiber.Map{
 			"error": "Node not found",
