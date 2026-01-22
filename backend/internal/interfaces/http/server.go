@@ -78,8 +78,6 @@ func NewServer(cfg *config.Config, db *gorm.DB, rdb *redis.Client, log *zap.Logg
 	// Initialize handlers
 	handler := handlers.NewHandler(cfg, db, rdb)
 	authHandler := handlers.NewAuthHandler(cfg, db, rdb)
-	serverHandler := handlers.NewServerHandler(cfg, db, rdb)
-	nodeHandler := handlers.NewNodeHandler(cfg, db, rdb)
 	userHandler := handlers.NewUserHandler(cfg, db, rdb)
 
 	// Health check
@@ -121,37 +119,6 @@ func NewServer(cfg *config.Config, db *gorm.DB, rdb *redis.Client, log *zap.Logg
 
 	// Servers
 	servers := protected.Group("/servers")
-	servers.Get("/", serverHandler.List)
-	servers.Post("/", authMiddleware.RequirePermission("servers.create"), serverHandler.Create)
-	servers.Get("/:id", serverHandler.GetByID)
-	servers.Put("/:id", serverHandler.Update)
-	servers.Delete("/:id", authMiddleware.RequirePermission("servers.delete"), serverHandler.Delete)
-
-	// Server power actions
-	servers.Post("/:id/power/start", serverHandler.Start)
-	servers.Post("/:id/power/stop", serverHandler.Stop)
-	servers.Post("/:id/power/restart", serverHandler.Restart)
-	servers.Post("/:id/power/kill", serverHandler.Kill)
-
-	// Server console
-	servers.Post("/:id/command", serverHandler.SendCommand)
-	servers.Get("/:id/stats", serverHandler.GetStats)
-
-	// Server backups
-	servers.Get("/:id/backups", serverHandler.ListBackups)
-	servers.Post("/:id/backups", serverHandler.CreateBackup)
-	servers.Delete("/:id/backups/:backupId", serverHandler.DeleteBackup)
-	servers.Post("/:id/backups/:backupId/restore", serverHandler.RestoreBackup)
-
-	// Nodes (admin only)
-	nodes := protected.Group("/nodes", authMiddleware.RequirePermission("nodes.view"))
-	nodes.Get("/", nodeHandler.List)
-	nodes.Post("/", authMiddleware.RequirePermission("nodes.create"), nodeHandler.Create)
-	nodes.Get("/:id", nodeHandler.GetByID)
-	nodes.Put("/:id", authMiddleware.RequirePermission("nodes.update"), nodeHandler.Update)
-	nodes.Delete("/:id", authMiddleware.RequirePermission("nodes.delete"), nodeHandler.Delete)
-	nodes.Get("/:id/configuration", nodeHandler.GetConfiguration)
-	nodes.Post("/:id/allocations", nodeHandler.CreateAllocations)
 
 	// Locations (admin only)
 	locations := protected.Group("/locations", authMiddleware.RequirePermission("nodes.view"))
@@ -161,7 +128,8 @@ func NewServer(cfg *config.Config, db *gorm.DB, rdb *redis.Client, log *zap.Logg
 	locations.Put("/:id", authMiddleware.RequirePermission("nodes.update"), handler.UpdateLocation)
 	locations.Delete("/:id", authMiddleware.RequirePermission("nodes.delete"), handler.DeleteLocation)
 
-	// Nodes (admin only) - update to use new handler
+	// Nodes (admin only)
+	nodes := protected.Group("/nodes", authMiddleware.RequirePermission("nodes.view"))
 	nodes.Get("/", handler.GetNodes)
 	nodes.Post("/", authMiddleware.RequirePermission("nodes.create"), handler.CreateNode)
 	nodes.Get("/:id", handler.GetNode)
