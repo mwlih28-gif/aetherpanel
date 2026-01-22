@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { HardDrive, Plus, MapPin, Cpu, HardDisk, MemoryStick, Wifi, Settings, Trash2 } from 'lucide-react'
+import { HardDrive, Plus, MapPin, Cpu, MemoryStick, Wifi, Settings, Trash2 } from 'lucide-react'
 
 interface Node {
   id: string
@@ -163,7 +163,7 @@ export default function NodesPage() {
 
                 <div className="bg-muted/50 rounded-lg p-3">
                   <div className="flex items-center gap-2 mb-2">
-                    <HardDisk className="h-4 w-4 text-purple-500" />
+                    <HardDrive className="h-4 w-4 text-purple-500" />
                     <span className="text-sm font-medium">Disk</span>
                   </div>
                   <div className="text-lg font-semibold">
