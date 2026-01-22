@@ -37,10 +37,10 @@ server:
     max_age: 86400
 
 database:
-  host: "localhost"
+  host: "postgres"
   port: 5432
   user: "aether"
-  password: "your_secure_password"
+  password: "aether_secret"
   name: "aether_panel"
   ssl_mode: "disable"
   max_open_conns: 25
@@ -50,9 +50,9 @@ database:
   log_level: "warn"
 
 redis:
-  host: "localhost"
+  host: "redis"
   port: 6379
-  password: "your_redis_password"
+  password: "aether_redis"
   db: 0
   pool_size: 10
   min_idle_conns: 5
