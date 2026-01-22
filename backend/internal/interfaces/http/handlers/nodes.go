@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
-	"time"
 
 	"github.com/aetherpanel/aether-panel/internal/domain/entities"
 	"github.com/gofiber/fiber/v2"

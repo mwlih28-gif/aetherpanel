@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/aetherpanel/aether-panel/internal/domain/entities"
 	"github.com/gofiber/fiber/v2"
@@ -60,11 +59,8 @@ func (h *Handler) CreateLocation(c *fiber.Ctx) error {
 	}
 
 	location := entities.Location{
-		ID:        uuid.New().String(),
-		Short:     req.Short,
-		Long:      req.Long,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ShortCode: req.Short,
+		Name:      req.Long,
 	}
 
 	if err := h.db.Create(&location).Error; err != nil {
@@ -128,9 +124,8 @@ func (h *Handler) UpdateLocation(c *fiber.Ctx) error {
 		})
 	}
 
-	location.Short = req.Short
-	location.Long = req.Long
-	location.UpdatedAt = time.Now()
+	location.ShortCode = req.Short
+	location.Name = req.Long
 
 	if err := h.db.Save(&location).Error; err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
