@@ -62,6 +62,9 @@ func NewPostgresConnection(cfg config.DatabaseConfig) (*gorm.DB, error) {
 
 // AutoMigrate runs database migrations for all entities
 func AutoMigrate(db *gorm.DB) error {
+	// Disable foreign key constraints temporarily
+	db.Exec("SET CONSTRAINTS ALL DEFERRED")
+	
 	return db.AutoMigrate(
 		// User & Auth
 		&entities.User{},
@@ -70,15 +73,17 @@ func AutoMigrate(db *gorm.DB) error {
 		&entities.Session{},
 		&entities.APIKey{},
 
-		// Server & Node
-		&entities.Server{},
-		&entities.Node{},
+		// Core entities first (without dependencies)
 		&entities.Location{},
-		&entities.Allocation{},
+		&entities.Node{},
 		&entities.Game{},
 		&entities.Egg{},
 		&entities.EggVariable{},
+		
+		// Then entities with dependencies
+		&entities.Server{},
 		&entities.ServerVariable{},
+		&entities.Allocation{},
 
 		// Backup
 		&entities.Backup{},
