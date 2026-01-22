@@ -15,6 +15,8 @@ interface Node {
   locationId: string
   location?: Location
   fqdn: string
+  hostname: string
+  ip: string
   scheme: 'http' | 'https'
   behindProxy: boolean
   maintenanceMode: boolean
@@ -132,7 +134,7 @@ export default function NodesPage() {
                       </span>
                       <span className="text-xs text-muted-foreground flex items-center gap-1">
                         <MapPin className="h-3 w-3" />
-                        {node.location}
+                        {node.location?.short || 'No location'}
                       </span>
                     </div>
                   </div>
