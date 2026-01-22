@@ -40,7 +40,7 @@ database:
   host: "postgres"
   port: 5432
   user: "aether"
-  password: "aether_secret"
+  password: "aether_secure_password"
   name: "aether_panel"
   ssl_mode: "disable"
   max_open_conns: 25
@@ -52,7 +52,7 @@ database:
 redis:
   host: "redis"
   port: 6379
-  password: "aether_redis"
+  password: "redis_secure_password"
   db: 0
   pool_size: 10
   min_idle_conns: 5
