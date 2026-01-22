@@ -72,13 +72,13 @@ func (h *Handler) CreateServer(c *fiber.Ctx) error {
 	var totalMemory, totalDisk int
 	h.db.Model(&entities.Server{}).Where("node_id = ?", req.NodeID).Select("COALESCE(SUM(memory), 0), COALESCE(SUM(disk), 0)").Row().Scan(&totalMemory, &totalDisk)
 
-	if totalMemory+req.Memory > node.Memory {
+	if totalMemory+req.Memory > int(node.MemoryTotal) {
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
 			"error": "Insufficient memory on node",
 		})
 	}
 
-	if totalDisk+req.Disk > node.Disk {
+	if totalDisk+req.Disk > int(node.DiskTotal) {
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{
 			"error": "Insufficient disk space on node",
 		})
@@ -87,22 +87,29 @@ func (h *Handler) CreateServer(c *fiber.Ctx) error {
 	// Get Docker image and startup command based on game
 	dockerImage, startupCmd := getGameConfig(req.Game, req.GameVersion)
 
+	// Parse UUIDs
+	nodeUUID, _ := uuid.Parse(req.NodeID)
+	ownerUUID, _ := uuid.Parse("00000000-0000-0000-0000-000000000001") // Default admin user
+	gameUUID, _ := uuid.Parse("00000000-0000-0000-0000-000000000001") // Default game
+	eggUUID, _ := uuid.Parse("00000000-0000-0000-0000-000000000001") // Default egg
+	allocationUUID, _ := uuid.Parse("00000000-0000-0000-0000-000000000001") // Default allocation
+
 	server := entities.Server{
-		ID:          uuid.New().String(),
-		UUID:        uuid.New().String(),
-		Name:        req.Name,
-		Description: req.Description,
-		NodeID:      req.NodeID,
-		Game:        req.Game,
-		GameVersion: req.GameVersion,
-		Status:      "stopped",
-		Memory:      req.Memory,
-		Disk:        req.Disk,
-		CPU:         req.CPU,
-		DockerImage: dockerImage,
-		StartupCmd:  startupCmd,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		UUID:            uuid.New().String(),
+		Name:            req.Name,
+		Description:     req.Description,
+		Status:          entities.ServerStatusStopped,
+		OwnerID:         ownerUUID,
+		NodeID:          nodeUUID,
+		AllocationID:    allocationUUID,
+		GameID:          gameUUID,
+		EggID:           eggUUID,
+		DockerImage:     dockerImage,
+		StartupCmd:      startupCmd,
+		MemoryLimit:     int64(req.Memory),
+		DiskLimit:       int64(req.Disk),
+		CPULimit:        req.CPU,
+		Environment:     make(map[string]string),
 	}
 
 	if err := h.db.Create(&server).Error; err != nil {
@@ -164,10 +171,9 @@ func (h *Handler) UpdateServer(c *fiber.Ctx) error {
 	// Update server fields
 	server.Name = req.Name
 	server.Description = req.Description
-	server.Memory = req.Memory
-	server.Disk = req.Disk
-	server.CPU = req.CPU
-	server.UpdatedAt = time.Now()
+	server.MemoryLimit = int64(req.Memory)
+	server.DiskLimit = int64(req.Disk)
+	server.CPULimit = req.CPU
 
 	if err := h.db.Save(&server).Error; err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{
@@ -194,7 +200,7 @@ func (h *Handler) DeleteServer(c *fiber.Ctx) error {
 		})
 	}
 
-	if server.Status == "running" {
+	if server.Status == entities.ServerStatusRunning {
 		return c.Status(http.StatusConflict).JSON(fiber.Map{
 			"error": "Cannot delete running server. Stop it first.",
 		})
@@ -220,15 +226,14 @@ func (h *Handler) StartServer(c *fiber.Ctx) error {
 		})
 	}
 
-	if server.Status == "running" {
+	if server.Status == entities.ServerStatusRunning {
 		return c.Status(http.StatusConflict).JSON(fiber.Map{
 			"error": "Server is already running",
 		})
 	}
 
 	// TODO: Send start command to Wings daemon
-	server.Status = "starting"
-	server.UpdatedAt = time.Now()
+	server.Status = entities.ServerStatusStarting
 	h.db.Save(&server)
 
 	return c.JSON(fiber.Map{
@@ -248,15 +253,14 @@ func (h *Handler) StopServer(c *fiber.Ctx) error {
 		})
 	}
 
-	if server.Status == "stopped" {
+	if server.Status == entities.ServerStatusStopped {
 		return c.Status(http.StatusConflict).JSON(fiber.Map{
 			"error": "Server is already stopped",
 		})
 	}
 
 	// TODO: Send stop command to Wings daemon
-	server.Status = "stopping"
-	server.UpdatedAt = time.Now()
+	server.Status = entities.ServerStatusStopping
 	h.db.Save(&server)
 
 	return c.JSON(fiber.Map{
@@ -277,8 +281,7 @@ func (h *Handler) RestartServer(c *fiber.Ctx) error {
 	}
 
 	// TODO: Send restart command to Wings daemon
-	server.Status = "restarting"
-	server.UpdatedAt = time.Now()
+	server.Status = entities.ServerStatusRestarting
 	h.db.Save(&server)
 
 	return c.JSON(fiber.Map{
