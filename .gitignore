@@ -1,0 +1,47 @@
+# Environment
+.env
+*.env.local
+
+# Dependencies
+node_modules/
+vendor/
+
+# Build outputs
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Data
+data/
+/var/lib/aether/
+
+# Temp
+tmp/
+temp/
+*.tmp
+
+# Test
+coverage/
+*.cover
+*.out
+
+# Docker
+docker-compose.override.yml

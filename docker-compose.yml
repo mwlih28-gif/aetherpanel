@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: aether_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-aether}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-aether_secret}
+      POSTGRES_DB: ${DB_NAME:-aether_panel}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - aether_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-aether}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: aether_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-aether_redis}
+    volumes:
+      - redis_data:/data
+    networks:
+      - aether_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aether_api
+    restart: unless-stopped
+    environment:
+      AETHER_ENVIRONMENT: production
+      AETHER_DATABASE_HOST: postgres
+      AETHER_DATABASE_PORT: 5432
+      AETHER_DATABASE_USER: ${DB_USER:-aether}
+      AETHER_DATABASE_PASSWORD: ${DB_PASSWORD:-aether_secret}
+      AETHER_DATABASE_NAME: ${DB_NAME:-aether_panel}
+      AETHER_REDIS_HOST: redis
+      AETHER_REDIS_PORT: 6379
+      AETHER_REDIS_PASSWORD: ${REDIS_PASSWORD:-aether_redis}
+      AETHER_JWT_SECRET: ${JWT_SECRET:-change_this_in_production}
+      AETHER_SECURITY_ENCRYPTION_KEY: ${ENCRYPTION_KEY:-32_byte_encryption_key_here!!}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - aether_network
+    volumes:
+      - ./data/backups:/var/lib/aether/backups
+      - ./data/logs:/var/log/aether
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: aether_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - api
+    networks:
+      - aether_network
+
+  # Traefik Reverse Proxy (optional)
+  traefik:
+    image: traefik:v2.10
+    container_name: aether_traefik
+    restart: unless-stopped
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@example.com}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_certs:/letsencrypt
+    networks:
+      - aether_network
+    profiles:
+      - with-traefik
+
+networks:
+  aether_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  traefik_certs:
