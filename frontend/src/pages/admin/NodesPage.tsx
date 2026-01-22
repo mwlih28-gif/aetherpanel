@@ -301,24 +301,88 @@ function AddNodeModal({ onClose, onAdd }: { onClose: () => void; onAdd: () => vo
   const getInstallationScript = () => {
     return `#!/bin/bash
 # Aether Panel Wings Installation Script
+# Automated installation script for Wings daemon
 
 set -e
 
-# Download and install Wings
-curl -L -o /usr/local/bin/wings "https://github.com/pterodactyl/wings/releases/latest/download/wings_linux_amd64"
-chmod u+x /usr/local/bin/wings
+# Colors for output
+RED='\\033[0;31m'
+GREEN='\\033[0;32m'
+YELLOW='\\033[1;33m'
+BLUE='\\033[0;34m'
+NC='\\033[0m'
 
-# Create wings user
-useradd -r -d /etc/pterodactyl -s /usr/sbin/nologin pterodactyl
+print_info() { echo -e "\${BLUE}[INFO]\${NC} \$1"; }
+print_success() { echo -e "\${GREEN}[SUCCESS]\${NC} \$1"; }
+print_warning() { echo -e "\${YELLOW}[WARNING]\${NC} \$1"; }
+print_error() { echo -e "\${RED}[ERROR]\${NC} \$1"; }
+
+# Configuration
+PANEL_URL="${window.location.protocol}//${window.location.host}"
+NODE_TOKEN="${generatedToken}"
+DAEMON_PORT="${formData.daemonListenPort}"
+SFTP_PORT="${formData.daemonSftpPort}"
+NODE_FQDN="${formData.fqdn}"
+USE_SSL="${formData.scheme === 'https' ? 'true' : 'false'}"
+
+echo -e "\${GREEN}=== Aether Panel Wings Installer ===\${NC}"
+echo
+
+# Check if running as root
+if [[ \$EUID -ne 0 ]]; then
+    print_error "This script must be run as root"
+    exit 1
+fi
+
+print_info "Installing dependencies..."
+if command -v apt &> /dev/null; then
+    apt update && apt install -y curl wget tar unzip software-properties-common apt-transport-https ca-certificates gnupg lsb-release
+elif command -v yum &> /dev/null; then
+    yum update -y && yum install -y curl wget tar unzip yum-utils device-mapper-persistent-data lvm2
+else
+    print_error "Unsupported package manager"
+    exit 1
+fi
+
+# Install Docker if not present
+if ! command -v docker &> /dev/null; then
+    print_info "Installing Docker..."
+    if command -v apt &> /dev/null; then
+        curl -fsSL https://get.docker.com | sh
+    else
+        curl -fsSL https://get.docker.com | sh
+    fi
+    systemctl start docker && systemctl enable docker
+    print_success "Docker installed"
+else
+    print_info "Docker already installed"
+fi
+
+# Create pterodactyl user
+print_info "Creating pterodactyl user..."
+if ! id "pterodactyl" &>/dev/null; then
+    useradd -r -d /etc/pterodactyl -s /usr/sbin/nologin pterodactyl
+fi
 
 # Create directories
-mkdir -p /etc/pterodactyl /var/log/pterodactyl /var/lib/pterodactyl/{volumes,backups}
-chown -R pterodactyl:pterodactyl /etc/pterodactyl /var/log/pterodactyl /var/lib/pterodactyl
+print_info "Creating directories..."
+mkdir -p /etc/pterodactyl /var/log/pterodactyl /var/lib/pterodactyl/{volumes,backups} /var/run/wings
+chown -R pterodactyl:pterodactyl /etc/pterodactyl /var/log/pterodactyl /var/lib/pterodactyl /var/run/wings
 
-# Create configuration file
-cat > /etc/pterodactyl/config.yml << EOF
+# Download Wings
+print_info "Downloading Wings..."
+WINGS_VERSION=\$(curl -s https://api.github.com/repos/pterodactyl/wings/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\\1/')
+curl -L -o /usr/local/bin/wings "https://github.com/pterodactyl/wings/releases/download/\${WINGS_VERSION}/wings_linux_amd64"
+chmod u+x /usr/local/bin/wings
+print_success "Wings downloaded: \$WINGS_VERSION"
+
+# Create configuration
+print_info "Creating configuration..."
+NODE_UUID=\$(cat /proc/sys/kernel/random/uuid)
+
+cat > /etc/pterodactyl/config.yml << 'EOF'
 debug: false
-uuid: ${crypto.randomUUID()}
+uuid: \${NODE_UUID}
 token_id: ${generatedToken.substring(0, 16)}
 token: ${generatedToken}
 api:
@@ -333,18 +397,21 @@ system:
   sftp:
     bind_port: ${formData.daemonSftpPort}
 allowed_mounts: []
-remote: http${formData.scheme === 'https' ? 's' : ''}://${window.location.host}
+remote: ${window.location.protocol}//${window.location.host}
 EOF
 
 chown pterodactyl:pterodactyl /etc/pterodactyl/config.yml
+chmod 600 /etc/pterodactyl/config.yml
 
 # Create systemd service
-cat > /etc/systemd/system/wings.service << EOF
+print_info "Creating systemd service..."
+cat > /etc/systemd/system/wings.service << 'EOF'
 [Unit]
 Description=Pterodactyl Wings Daemon
-After=docker.service
+After=docker.service network-online.target
 Requires=docker.service
 PartOf=docker.service
+DefaultDependencies=no
 
 [Service]
 User=pterodactyl
@@ -361,12 +428,46 @@ RestartSec=5s
 WantedBy=multi-user.target
 EOF
 
-# Enable and start Wings
-systemctl enable --now wings
+systemctl daemon-reload
 
-echo "Wings installation completed successfully!"
-echo "Node should now appear as online in the panel."
-`
+# Configure firewall
+print_info "Configuring firewall..."
+if command -v ufw &> /dev/null && ufw status | grep -q "Status: active"; then
+    ufw allow ${formData.daemonListenPort}/tcp
+    ufw allow ${formData.daemonSftpPort}/tcp
+elif command -v firewall-cmd &> /dev/null; then
+    firewall-cmd --permanent --add-port=${formData.daemonListenPort}/tcp
+    firewall-cmd --permanent --add-port=${formData.daemonSftpPort}/tcp
+    firewall-cmd --reload
+fi
+
+# Start Wings
+print_info "Starting Wings service..."
+systemctl enable wings
+systemctl start wings
+
+sleep 3
+
+if systemctl is-active --quiet wings; then
+    print_success "Wings installation completed successfully!"
+    echo
+    echo -e "\${GREEN}=== Installation Summary ===\${NC}"
+    echo -e "\${BLUE}Panel URL:\${NC} ${window.location.protocol}//${window.location.host}"
+    echo -e "\${BLUE}Node FQDN:\${NC} ${formData.fqdn}"
+    echo -e "\${BLUE}Daemon Port:\${NC} ${formData.daemonListenPort}"
+    echo -e "\${BLUE}SFTP Port:\${NC} ${formData.daemonSftpPort}"
+    echo
+    echo -e "\${YELLOW}Useful Commands:\${NC}"
+    echo -e "  View logs: \${BLUE}journalctl -u wings -f\${NC}"
+    echo -e "  Restart: \${BLUE}systemctl restart wings\${NC}"
+    echo -e "  Status: \${BLUE}systemctl status wings\${NC}"
+    echo
+    echo -e "\${GREEN}Your node should now appear as online in Aether Panel!\${NC}"
+else
+    print_error "Failed to start Wings service"
+    echo "Check logs with: journalctl -u wings -f"
+    exit 1
+fi`
   }
 
   if (currentStep === 3) {
@@ -379,8 +480,27 @@ echo "Node should now appear as online in the panel."
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <h3 className="font-semibold text-blue-900 mb-2">Installation Instructions</h3>
               <p className="text-blue-800 text-sm">
-                Run the following script on your server to install and configure Wings daemon.
-                Make sure Docker is installed before running this script.
+                Run the following command on your server to automatically install and configure Wings daemon.
+                The script will handle all dependencies including Docker installation.
+              </p>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="font-medium">Quick Install (Recommended)</h4>
+                <button
+                  onClick={() => copyToClipboard(`bash <(curl -s ${window.location.protocol}//${window.location.host}/install-wings.sh) --token="${generatedToken}" --fqdn="${formData.fqdn}" --daemon-port="${formData.daemonListenPort}" --sftp-port="${formData.daemonSftpPort}" --ssl="${formData.scheme === 'https'}"`)}
+                  className="flex items-center gap-2 px-3 py-1 bg-green-100 hover:bg-green-200 rounded text-sm"
+                >
+                  <Copy className="h-4 w-4" />
+                  Copy Command
+                </button>
+              </div>
+              <div className="bg-gray-900 text-green-400 p-4 rounded-lg text-sm font-mono">
+                bash &lt;(curl -s {window.location.protocol}//{window.location.host}/install-wings.sh) --token="{generatedToken}" --fqdn="{formData.fqdn}" --daemon-port="{formData.daemonListenPort}" --sftp-port="{formData.daemonSftpPort}" --ssl="{formData.scheme === 'https'}"
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                This command will automatically download and run the installation script with your node configuration.
               </p>
             </div>
 
