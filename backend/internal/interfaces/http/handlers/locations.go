@@ -5,7 +5,6 @@ import (
 
 	"github.com/aetherpanel/aether-panel/internal/domain/entities"
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
 )
 
 type CreateLocationRequest struct {
