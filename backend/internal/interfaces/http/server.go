@@ -239,7 +239,7 @@ func handleStatsWebSocket(c *websocket.Conn, cfg *config.Config, rdb *redis.Clie
 	ctx := context.Background()
 	for range ticker.C {
 		// Get stats from Redis cache
-		stats, err := rdb.Get(ctx, "stats:"+serverID).Result()
+		stats, err := rdb.Get(ctx, "stats:"+serverID)
 		if err != nil {
 			continue
 		}
