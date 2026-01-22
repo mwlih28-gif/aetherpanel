@@ -76,6 +76,7 @@ func NewServer(cfg *config.Config, db *gorm.DB, rdb *redis.Client, log *zap.Logg
 	authMiddleware := middleware.NewAuthMiddleware(cfg, rdb)
 
 	// Initialize handlers
+	handler := handlers.NewHandler(cfg, db, rdb)
 	authHandler := handlers.NewAuthHandler(cfg, db, rdb)
 	serverHandler := handlers.NewServerHandler(cfg, db, rdb)
 	nodeHandler := handlers.NewNodeHandler(cfg, db, rdb)
@@ -152,10 +153,33 @@ func NewServer(cfg *config.Config, db *gorm.DB, rdb *redis.Client, log *zap.Logg
 	nodes.Get("/:id/configuration", nodeHandler.GetConfiguration)
 	nodes.Post("/:id/allocations", nodeHandler.CreateAllocations)
 
-	// Locations
-	locations := protected.Group("/locations")
-	locations.Get("/", nodeHandler.ListLocations)
-	locations.Post("/", authMiddleware.RequirePermission("nodes.create"), nodeHandler.CreateLocation)
+	// Locations (admin only)
+	locations := protected.Group("/locations", authMiddleware.RequirePermission("nodes.view"))
+	locations.Get("/", handler.GetLocations)
+	locations.Post("/", authMiddleware.RequirePermission("nodes.create"), handler.CreateLocation)
+	locations.Get("/:id", handler.GetLocation)
+	locations.Put("/:id", authMiddleware.RequirePermission("nodes.update"), handler.UpdateLocation)
+	locations.Delete("/:id", authMiddleware.RequirePermission("nodes.delete"), handler.DeleteLocation)
+
+	// Nodes (admin only) - update to use new handler
+	nodes.Get("/", handler.GetNodes)
+	nodes.Post("/", authMiddleware.RequirePermission("nodes.create"), handler.CreateNode)
+	nodes.Get("/:id", handler.GetNode)
+	nodes.Put("/:id", authMiddleware.RequirePermission("nodes.update"), handler.UpdateNode)
+	nodes.Delete("/:id", authMiddleware.RequirePermission("nodes.delete"), handler.DeleteNode)
+	nodes.Get("/:id/configuration", handler.GetNodeConfiguration)
+
+	// Servers - update to use new handler
+	servers.Get("/", handler.GetServers)
+	servers.Post("/", authMiddleware.RequirePermission("servers.create"), handler.CreateServer)
+	servers.Get("/:id", handler.GetServer)
+	servers.Put("/:id", handler.UpdateServer)
+	servers.Delete("/:id", authMiddleware.RequirePermission("servers.delete"), handler.DeleteServer)
+
+	// Server power actions - update to use new handler
+	servers.Post("/:id/start", handler.StartServer)
+	servers.Post("/:id/stop", handler.StopServer)
+	servers.Post("/:id/restart", handler.RestartServer)
 
 	// WebSocket for real-time console
 	app.Get("/ws/console/:serverId", websocket.New(func(c *websocket.Conn) {

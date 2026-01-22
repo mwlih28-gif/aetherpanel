@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, MapPin, Edit, Trash2, Globe } from 'lucide-react'
+import api from '../../lib/api'
 
 interface Location {
   id: string
   short: string
   long: string
-  createdAt: string
-  updatedAt: string
+  created_at: string
+  updated_at: string
 }
 
 export default function LocationsPage() {
@@ -21,9 +22,9 @@ export default function LocationsPage() {
 
   const fetchLocations = async () => {
     try {
-      // TODO: Replace with actual API call
+      const response = await api.getLocations() as any
+      setLocations(response.data || [])
       setLoading(false)
-      setLocations([])
     } catch (error) {
       console.error('Failed to fetch locations:', error)
       setLoading(false)
@@ -32,21 +33,21 @@ export default function LocationsPage() {
 
   const handleCreateLocation = async (data: { short: string; long: string }) => {
     try {
-      // TODO: Replace with actual API call
-      console.log('Creating location:', data)
+      await api.createLocation(data)
       fetchLocations()
     } catch (error) {
       console.error('Failed to create location:', error)
+      alert('Failed to create location: ' + (error as Error).message)
     }
   }
 
   const handleUpdateLocation = async (id: string, data: { short: string; long: string }) => {
     try {
-      // TODO: Replace with actual API call
-      console.log('Updating location:', id, data)
+      await api.updateLocation(id, data)
       fetchLocations()
     } catch (error) {
       console.error('Failed to update location:', error)
+      alert('Failed to update location: ' + (error as Error).message)
     }
   }
 
@@ -54,11 +55,11 @@ export default function LocationsPage() {
     if (!confirm('Are you sure you want to delete this location?')) return
     
     try {
-      // TODO: Replace with actual API call
-      console.log('Deleting location:', id)
+      await api.deleteLocation(id)
       fetchLocations()
     } catch (error) {
       console.error('Failed to delete location:', error)
+      alert('Failed to delete location: ' + (error as Error).message)
     }
   }
 
@@ -127,7 +128,7 @@ export default function LocationsPage() {
                     <span className="text-muted-foreground">0 nodes</span>
                   </td>
                   <td className="p-4 text-muted-foreground">
-                    {new Date(location.createdAt).toLocaleDateString()}
+                    {new Date(location.created_at).toLocaleDateString()}
                   </td>
                   <td className="p-4">
                     <div className="flex items-center gap-2 justify-end">

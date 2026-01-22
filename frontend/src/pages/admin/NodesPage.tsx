@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { HardDrive, Plus, MapPin, Cpu, MemoryStick, Wifi, Settings, Trash2, Key, Copy, Eye, EyeOff, Terminal, Globe } from 'lucide-react'
+import api from '../../lib/api'
 
 interface Location {
   id: string
@@ -52,9 +53,9 @@ export default function NodesPage() {
 
   const fetchNodes = async () => {
     try {
-      // TODO: Replace with actual API call
+      const response = await api.getNodes() as any
+      setNodes(response.data || [])
       setLoading(false)
-      setNodes([]) // Start with empty nodes
     } catch (error) {
       console.error('Failed to fetch nodes:', error)
       setLoading(false)
@@ -259,8 +260,8 @@ function AddNodeModal({ onClose, onAdd }: { onClose: () => void; onAdd: () => vo
 
   const fetchLocations = async () => {
     try {
-      // TODO: Replace with actual API call
-      setLocations([])
+      const response = await api.getLocations() as any
+      setLocations(response.data || [])
     } catch (error) {
       console.error('Failed to fetch locations:', error)
     }

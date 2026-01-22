@@ -44,6 +44,12 @@ func main() {
 	}
 	log.Info("✅ Database connection established")
 
+	// Run database migrations
+	if err := database.AutoMigrate(db); err != nil {
+		log.Fatal("Failed to run database migrations", zap.Error(err))
+	}
+	log.Info("✅ Database migrations completed")
+
 	// Initialize Redis connection
 	rdb, err := redis.NewRedisClient(cfg.Redis)
 	if err != nil {
