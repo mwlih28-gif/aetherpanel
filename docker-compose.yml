@@ -56,7 +56,7 @@ services:
       AETHER_JWT_SECRET: ${JWT_SECRET:-change_this_in_production}
       AETHER_SECURITY_ENCRYPTION_KEY: ${ENCRYPTION_KEY:-32_byte_encryption_key_here!!}
     ports:
-      - "${API_PORT:-8080}:8080"
+      - "${API_PORT:-8081}:8080"
     depends_on:
       postgres:
         condition: service_healthy
